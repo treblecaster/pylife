@@ -131,18 +131,18 @@ class GameTable(object):
         for line in file_obj:
             # Signals 'comment' line to be skipped
             if line[0] != "!":
-                for char in line:
-                    if char == "O":
-                        self.cells[xx][yy].alive_curr_gen = True
-                    xx = xx + 1
-                    if xx > self.xscale:
-                        raise IOError("File width (%d) too wide for game" \
-                                        "table width (%d)" % (xx, self.xscale))
-                xx = 0
-                yy = yy + 1
                 if yy > self.yscale:
                     raise IOError("File height (%d) too large for game " \
                                     "table height (%d)" % (yy, self.yscale))
+                for char in line:
+                    if xx > self.xscale:
+                        raise IOError("File width (%d) too wide for game" \
+                                        "table width (%d)" % (xx, self.xscale))
+                    if char == "O":
+                        self.cells[xx][yy].alive_curr_gen = True
+                    xx = xx + 1
+                xx = 0
+                yy = yy + 1
 
     def _pygame_drawfield(self):
         pygame.surfarray.blit_array(self.scale_screen, self.px_arr)
