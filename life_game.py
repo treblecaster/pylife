@@ -7,8 +7,30 @@ Small driver program to simulate a game of Conway's life.
 import sys
 import time
 import Numeric
-import pygame
-from pygame.locals import QUIT
+
+graphics_lib = None
+
+try:
+    import pygame
+except ImportError:
+    pass
+else:
+    from pygame.locals import QUIT
+    graphics_lib = 'pygame'
+
+if not graphics_lib:
+    try:
+    	import curses
+	import traceback
+    except ImportError:
+    	pass
+    else:
+    	graphics_lib = 'curses'
+
+
+if not graphics_lib:
+    print "Could not find an appropriate graphics library"
+    raise ImportError
 
 
 class Cell(object):
@@ -23,13 +45,12 @@ class Cell(object):
 class GameTable(object):
     """Game of life table"""
 
-    def __init__(self, width, height, scale, seed_file=None):
+    def __init__(self, seed_file=None):
         self.screen = None
         self.scale_screen = None
         self.cells = []
 
-        self.xscale = width / scale
-        self.yscale = height / scale
+        self._init_graphics()
 
         # 2-D array that cooresponds to pixels on surface
         self.px_arr = Numeric.zeros((self.xscale, self.yscale), 'i')
@@ -40,15 +61,19 @@ class GameTable(object):
             for yy in range(self.yscale):
                 self.cells[xx].append(Cell())
 
-        self._init_graphics(width, height)
         self._init_configuration(seed_file)
         self._center_on_alive_cells()
         self._prepare_generation()
         self.advance_generation()
         self._drawfield()
 
-    def _init_graphics(self, width, height):
-        """Setup graphics (game board), etc."""
+    def _init_pygame_graphics(self):
+    	width = 640
+	height = 480
+	scale = 4
+        self.xscale = width / scale
+        self.yscale = height / scale
+	
         pygame.init()
         self.screen = pygame.display.set_mode((width, height), 0, 8)
         self.scale_screen = pygame.surface.Surface((self.xscale, self.yscale),
@@ -63,6 +88,21 @@ class GameTable(object):
         self.scale_screen.fill(black)
         self.screen.set_palette([black, red, green, blue, white])
         self.scale_screen.set_palette([black, red, green, blue, white])
+
+    def _init_curses_graphics(self):
+        self.screen = curses.initscr()
+        curses.curs_set(0)
+    	self.yscale, self.xscale = self.screen.getmaxyx()
+	
+	# This is necessary, maybe due to return character?
+	self.xscale = self.xscale - 1
+
+    def _init_graphics(self):
+        """Setup graphics (game board), etc."""
+    	if graphics_lib == 'pygame':
+	    self._init_pygame_graphics()
+	elif graphics_lib == 'curses':
+	    self._init_curses_graphics()
 
     def _init_configuration(self, seed_file):
         """Setup initial alive cells"""
@@ -104,13 +144,36 @@ class GameTable(object):
                     raise IOError("File height (%d) too large for game " \
                                     "table height (%d)" % (yy, self.yscale))
 
-    def _drawfield(self):
-        """Draw board"""
+    def _pygame_drawfield(self):
         pygame.surfarray.blit_array(self.scale_screen, self.px_arr)
         temp = pygame.transform.scale(self.scale_screen,
                                         self.screen.get_size())
         self.screen.blit(temp, (0, 0))
         pygame.display.update()
+
+    def _curses_drawfield(self):
+        self.screen.erase()
+        for yy in range(self.yscale):
+            for xx in range(self.xscale):
+                color = self.px_arr[xx][yy]
+                if (color >= 4):
+                    self.screen.addstr(yy, xx, "o", curses.A_DIM)
+                elif (color == 3):
+                    self.screen.addstr(yy, xx, "o")
+                elif (color == 2):
+                    self.screen.addstr(yy, xx, "o", curses.A_BOLD)
+                elif (color == 1):
+                    self.screen.addstr(yy, xx, "o", curses.A_BOLD)
+                else:
+                    self.screen.addstr(yy, xx, " ")
+        self.screen.refresh()
+
+    def _drawfield(self):
+        """Draw board"""
+    	if graphics_lib == 'pygame':
+	    self._pygame_drawfield()
+	elif graphics_lib == 'curses':
+	    self._curses_drawfield()
 
     def _prepare_generation(self):
         """Apply rules of life to each cell"""
@@ -240,7 +303,7 @@ class GameTable(object):
 
 def setup(filename):
     """Setup table to simulate game"""
-    return GameTable(640, 480, 4, filename)
+    return GameTable(filename)
 
 
 def run(table):
@@ -249,16 +312,22 @@ def run(table):
         # FIXME: Catch keyboard
         time.sleep(1)
 
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                return
+    	if graphics_lib == 'pygame':
+            for event in pygame.event.get():
+            	if event.type == QUIT:
+                    return
 
         table.advance_generation()
 
 def teardown():
     """Stop simulating game and cleanup graphics"""
-    pygame.display.quit()
-    pygame.quit()
+    if graphics_lib == 'pygame':
+    	pygame.display.quit()
+    	pygame.quit()
+    elif graphics_lib == 'curses':
+    	curses.nocbreak()
+    	curses.echo()
+    	curses.endwin()
 
 
 def main():
@@ -266,10 +335,16 @@ def main():
     filename = None
     if len(sys.argv) > 1:
         filename = sys.argv[1]
-
     table = setup(filename)
     run(table)
     teardown()
 
 if __name__ == "__main__":
-    main()
+    try:
+	main()
+    except:
+    	teardown()
+    	if graphics_lib == 'curses':
+	    # print error message re exception
+	    traceback.print_exc()
+
